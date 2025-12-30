@@ -293,8 +293,43 @@ let pool = [
     hideFilename();
     lockedSrc = null;
 
-    if (pool.length === 0) {
-      enterReviewMode();
+if (pool.length === 0) {
+  enterReviewMode(); // 你原本的回看模式
+
+  // ===== 主控台網址（已填好）=====
+  const MASTER_URL = "https://d03280112-sketch.github.io/ALL/";
+
+  // ===== 避免重複建立按鈕 =====
+  if (!document.getElementById("back-to-master")) {
+
+    const backBtn = document.createElement("button");
+    backBtn.id = "back-to-master";
+    backBtn.textContent = "返回主控台";
+
+    // 位置與外觀（左下角、大而清楚）
+    backBtn.style.position = "fixed";
+    backBtn.style.left = "24px";
+    backBtn.style.bottom = "24px";
+    backBtn.style.zIndex = "9999";
+
+    backBtn.style.fontSize = "28px";
+    backBtn.style.fontWeight = "900";
+    backBtn.style.padding = "18px 28px";
+    backBtn.style.borderRadius = "18px";
+    backBtn.style.border = "0";
+    backBtn.style.cursor = "pointer";
+
+    backBtn.style.background = "#FFD400";
+    backBtn.style.color = "#000";
+    backBtn.style.boxShadow = "0 0 20px rgba(255,212,0,0.6)";
+
+    backBtn.addEventListener("click", () => {
+      window.location.href = MASTER_URL;
+    });
+
+    document.body.appendChild(backBtn);
+  }
+}
     }
   }
 
@@ -339,4 +374,5 @@ preloadImages(pool, () => {
 
 </body>
 </html>
+
 
