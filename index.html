@@ -83,14 +83,14 @@
     /* 檔名：放在剩餘數量下方（不顯示副檔名） */
     .filename{
       position:absolute;
-      top: 96px;                /* HUD 正下方 */
+      top: 96px;
       left: 20px;
       max-width: calc(100% - 40px);
 
       padding: 14px 20px;
       border-radius: 14px;
 
-      font-size: 64px;          /* 與剩餘數量同級 */
+      font-size: 64px;
       font-weight: 900;
       letter-spacing: 2px;
 
@@ -102,7 +102,7 @@
         0 0 22px rgba(0,229,255,.6),
         3px 3px 6px rgba(0,0,0,.95);
 
-      opacity: 0;               /* 預設隱藏 */
+      opacity: 0;
       transition: opacity .12s ease;
       pointer-events:none;
 
@@ -132,7 +132,7 @@
     <div class="hud" id="hud">剩餘：10</div>
     <div class="filename" id="filename"></div>
 
-    <img id="img" src="1.png" alt="quiz"/>
+    <img id="img" src="" alt="quiz"/>
 
     <div class="status" id="status">空白鍵：停 → 顯示檔名 → 再轉（抽完可點右側回看）</div>
   </div>
@@ -140,23 +140,24 @@
   <div class="side" id="picked"></div>
 
 <script>
-// 圖片預載（GitHub Pages 必備）
+  // 圖片預載（GitHub Pages 必備）
   function preloadImages(list, callback) {
     let loaded = 0;
     const total = list.length;
+
+    if (total === 0) { callback(); return; }
 
     list.forEach(src => {
       const img = new Image();
       img.onload = img.onerror = () => {
         loaded++;
-        if (loaded === total) {
-          callback();
-        }
+        if (loaded === total) callback();
       };
       img.src = src;
     });
   }
-  // 10 張 PNG（放同資料夾；若你用選資料夾版，這裡會改成讀入）
+
+  // 10 張圖片（同資料夾）
 let pool = [
   "A菜.png",
   "九層塔.png",
@@ -169,6 +170,9 @@ let pool = [
   "高麗菜.png",
   "蒜頭.png"
 ];
+
+  const MASTER_URL = "https://d03280112-sketch.github.io/ALL/";
+
   const mainEl = document.getElementById("main");
   const imgEl = document.getElementById("img");
   const hudEl = document.getElementById("hud");
@@ -187,7 +191,7 @@ let pool = [
   const STATE = { RUN:"RUN", STOP:"STOP", REVEAL:"REVEAL" };
   let state = STATE.RUN;
 
-  // 記錄「目前停住的那張」(在扣除前會用到)
+  // 記錄「目前停住的那張」
   let lockedSrc = null;
 
   function updateHud(){
@@ -199,7 +203,7 @@ let pool = [
     filenameEl.textContent = "";
   }
 
-  // ✅ 移除副檔名（.png/.jpg/...）
+  // 移除副檔名
   function stripExtension(filename){
     return filename.replace(/\.[^/.]+$/, "");
   }
@@ -236,8 +240,6 @@ let pool = [
   function revealOnly(){
     if (state !== STATE.STOP || !lockedSrc) return;
     state = STATE.REVEAL;
-
-    // ✅ 顯示檔名但不顯示副檔名
     showFilename(stripExtension(lockedSrc));
   }
 
@@ -265,48 +267,13 @@ let pool = [
     }
   }
 
-  function commitRemoveAndAddThumb(){
-    if (lockedSrc == null) return;
-
-    // 右側新增縮圖
-    const thumb = document.createElement("img");
-    thumb.src = lockedSrc;
-    thumb.className = "thumb";
-    thumb.dataset.src = lockedSrc;
-    thumb.dataset.name = lockedSrc; // 用來顯示檔名（再 stripExtension）
-
-    // 抽完後可回看
-    thumb.addEventListener("click", () => {
-      if (!reviewMode) return;
-      selectThumb(thumb);
-      imgEl.src = thumb.dataset.src;
-      showFilename(stripExtension(thumb.dataset.name)); // ✅ 回看也不顯示副檔名
-    });
-
-    pickedEl.appendChild(thumb);
-
-    // 從 pool 移除 lockedSrc
-    const idx = pool.indexOf(lockedSrc);
-    if (idx !== -1) pool.splice(idx, 1);
-
-    updateHud();
-    hideFilename();
-    lockedSrc = null;
-
-if (pool.length === 0) {
-  enterReviewMode(); // 你原本的回看模式
-
-  // ===== 主控台網址（已填好）=====
-  const MASTER_URL = "https://d03280112-sketch.github.io/ALL/";
-
-  // ===== 避免重複建立按鈕 =====
-  if (!document.getElementById("back-to-master")) {
+  function ensureBackButton(){
+    if (document.getElementById("back-to-master")) return;
 
     const backBtn = document.createElement("button");
     backBtn.id = "back-to-master";
     backBtn.textContent = "返回主控台";
 
-    // 位置與外觀（左下角、大而清楚）
     backBtn.style.position = "fixed";
     backBtn.style.left = "24px";
     backBtn.style.bottom = "24px";
@@ -323,48 +290,83 @@ if (pool.length === 0) {
     backBtn.style.color = "#000";
     backBtn.style.boxShadow = "0 0 20px rgba(255,212,0,0.6)";
 
-    backBtn.addEventListener("click", () => {
+    backBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      backBtn.blur();
       window.location.href = MASTER_URL;
     });
 
     document.body.appendChild(backBtn);
   }
-}
+
+  function commitRemoveAndAddThumb(){
+    if (lockedSrc == null) return;
+
+    // 右側新增縮圖
+    const thumb = document.createElement("img");
+    thumb.src = lockedSrc;
+    thumb.className = "thumb";
+    thumb.dataset.src = lockedSrc;
+    thumb.dataset.name = lockedSrc;
+
+    // 抽完後可回看
+    thumb.addEventListener("click", () => {
+      if (!reviewMode) return;
+      selectThumb(thumb);
+      imgEl.src = thumb.dataset.src;
+      showFilename(stripExtension(thumb.dataset.name));
+    });
+
+    pickedEl.appendChild(thumb);
+
+    // 從 pool 移除 lockedSrc
+    const idx = pool.indexOf(lockedSrc);
+    if (idx !== -1) pool.splice(idx, 1);
+
+    updateHud();
+    hideFilename();
+    lockedSrc = null;
+
+    if (pool.length === 0) {
+      enterReviewMode();
+      ensureBackButton();
     }
   }
 
-  // ✅ 空白鍵循環邏輯
+  // ✅ 空白鍵三段式
   function onSpace(){
     if (reviewMode) return;
     if (pool.length === 0) return;
 
     if (state === STATE.RUN) {
-      // RUN -> STOP
       stopOnly();
     } else if (state === STATE.STOP) {
-      // STOP -> REVEAL
       revealOnly();
     } else if (state === STATE.REVEAL) {
-      // REVEAL -> 扣除 + 加縮圖 -> 再 RUN
       commitRemoveAndAddThumb();
       start();
     }
   }
 
   // 初始
-updateHud();
+  updateHud();
 
-preloadImages(pool, () => {
-  showRandom();
-  start();
-});
-
-  document.addEventListener("keydown", (e) => {
-    if (e.code === "Space") {
-      e.preventDefault();
-      onSpace();
-    }
+  preloadImages(pool, () => {
+    showRandom();
+    start();
   });
+
+  // ✅ 空白鍵：最穩版本（避免被瀏覽器/焦點吃掉）
+  window.addEventListener("keydown", (e) => {
+    const isSpace = (e.code === "Space") || (e.key === " ");
+    if (!isSpace) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    onSpace();
+  }, { capture: true });
 
   // 點一下主畫面也做同樣循環（可選）
   document.addEventListener("click", () => {
@@ -374,5 +376,3 @@ preloadImages(pool, () => {
 
 </body>
 </html>
-
-
