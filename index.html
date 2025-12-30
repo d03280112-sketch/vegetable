@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>抽題三段式：停→顯示檔名→再轉（不顯示副檔名）</title>
+  <style>
+    body{
+      margin:0;
+      height:100vh;
+      background:#000;
+      display:flex;
+      overflow:hidden;
+      user-select:none;
+      font-family: system-ui, -apple-system, "Microsoft JhengHei", sans-serif;
+    }
+
+    /* 左側主畫面 */
+    .main {
+      flex: 1;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      position: relative;
+    }
+    .main img{
+      max-width:95%;
+      max-height:90vh;
+      object-fit:contain;
+    }
+
+    /* 右側縮圖欄 */
+    .side {
+      width: 240px;
+      background: #000;
+      border-left: 2px solid #222;
+      display:flex;
+      flex-direction: column;
+      padding: 10px;
+      gap: 8px;
+      overflow-y: auto;
+    }
+
+    /* 縮圖 */
+    .thumb{
+      width: 100%;
+      object-fit: contain;
+      border: 2px solid #333;
+      box-sizing: border-box;
+      opacity: .9;
+      transition: transform .08s ease, border-color .08s ease, opacity .08s ease;
+    }
+    .review-mode .thumb{
+      cursor: pointer;
+      border-color: #FFD400;
+    }
+    .review-mode .thumb:hover{
+      transform: scale(1.02);
+      opacity: 1;
+    }
+    .thumb.active{
+      border-color: #00E5FF;
+      box-shadow: 0 0 10px rgba(0,229,255,.7);
+      opacity: 1;
+    }
+
+    /* HUD: 剩餘 */
+    .hud{
+      position: absolute;
+      top: 16px;
+      left: 20px;
+      font-size: 64px;
+      font-weight: 900;
+      letter-spacing: 2px;
+      color: #FFD400;
+      text-shadow:
+        0 0 8px rgba(255,212,0,.9),
+        0 0 16px rgba(255,140,0,.6),
+        2px 2px 4px rgba(0,0,0,.9);
+      pointer-events:none;
+    }
+
+    /* 檔名：放在剩餘數量下方（不顯示副檔名） */
+    .filename{
+      position:absolute;
+      top: 96px;                /* HUD 正下方 */
+      left: 20px;
+      max-width: calc(100% - 40px);
+
+      padding: 14px 20px;
+      border-radius: 14px;
+
+      font-size: 64px;          /* 與剩餘數量同級 */
+      font-weight: 900;
+      letter-spacing: 2px;
+
+      color: #00E5FF;
+      background: rgba(0,0,0,.7);
+      border: 3px solid rgba(0,229,255,.6);
+      text-shadow:
+        0 0 10px rgba(0,229,255,.9),
+        0 0 22px rgba(0,229,255,.6),
+        3px 3px 6px rgba(0,0,0,.95);
+
+      opacity: 0;               /* 預設隱藏 */
+      transition: opacity .12s ease;
+      pointer-events:none;
+
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .filename.show{
+      opacity: 1;
+    }
+
+    /* 狀態提示 */
+    .status{
+      position:absolute;
+      bottom: 12px;
+      left: 20px;
+      color:#fff;
+      font-size:14px;
+      opacity:.7;
+      pointer-events:none;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="main" id="main">
+    <div class="hud" id="hud">剩餘：10</div>
+    <div class="filename" id="filename"></div>
+
+    <img id="img" src="1.png" alt="quiz"/>
+
+    <div class="status" id="status">空白鍵：停 → 顯示檔名 → 再轉（抽完可點右側回看）</div>
+  </div>
+
+  <div class="side" id="picked"></div>
+
+<script>
+// 圖片預載（GitHub Pages 必備）
+  function preloadImages(list, callback) {
+    let loaded = 0;
+    const total = list.length;
+
+    list.forEach(src => {
+      const img = new Image();
+      img.onload = img.onerror = () => {
+        loaded++;
+        if (loaded === total) {
+          callback();
+        }
+      };
+      img.src = src;
+    });
+  }
+  // 10 張 PNG（放同資料夾；若你用選資料夾版，這裡會改成讀入）
+let pool = [
+  "尺.png",
+  "白板筆.png",
+  "奇異筆.png",
+  "計算機.png",
+  "書包.png",
+  "剪刀.png",
+  "圓規.png",
+  "鉛筆.png",
+  "膠帶.png",
+  "蠟筆.png"
+];
+  const mainEl = document.getElementById("main");
+  const imgEl = document.getElementById("img");
+  const hudEl = document.getElementById("hud");
+  const statusEl = document.getElementById("status");
+  const pickedEl = document.getElementById("picked");
+  const filenameEl = document.getElementById("filename");
+
+  const INTERVAL_MS = 100; // 每秒 10 次
+  let timer = null;
+  let currentIndex = 0;
+
+  // 抽完後回看模式
+  let reviewMode = false;
+
+  // 三段式狀態：RUN -> STOP -> REVEAL -> RUN(並扣除)
+  const STATE = { RUN:"RUN", STOP:"STOP", REVEAL:"REVEAL" };
+  let state = STATE.RUN;
+
+  // 記錄「目前停住的那張」(在扣除前會用到)
+  let lockedSrc = null;
+
+  function updateHud(){
+    hudEl.textContent = `剩餘：${pool.length}`;
+  }
+
+  function hideFilename(){
+    filenameEl.classList.remove("show");
+    filenameEl.textContent = "";
+  }
+
+  // ✅ 移除副檔名（.png/.jpg/...）
+  function stripExtension(filename){
+    return filename.replace(/\.[^/.]+$/, "");
+  }
+
+  function showFilename(text){
+    filenameEl.textContent = text;
+    filenameEl.classList.add("show");
+  }
+
+  function showRandom(){
+    if (pool.length === 0) return;
+    currentIndex = Math.floor(Math.random() * pool.length);
+    imgEl.src = pool[currentIndex];
+  }
+
+  function start(){
+    if (pool.length === 0 || timer || reviewMode) return;
+    timer = setInterval(showRandom, INTERVAL_MS);
+    state = STATE.RUN;
+    lockedSrc = null;
+    hideFilename();
+  }
+
+  function stopOnly(){
+    if (!timer) return;
+    clearInterval(timer);
+    timer = null;
+
+    lockedSrc = pool[currentIndex]; // 先鎖住，還沒扣除
+    state = STATE.STOP;
+    hideFilename();
+  }
+
+  function revealOnly(){
+    if (state !== STATE.STOP || !lockedSrc) return;
+    state = STATE.REVEAL;
+
+    // ✅ 顯示檔名但不顯示副檔名
+    showFilename(stripExtension(lockedSrc));
+  }
+
+  function selectThumb(thumb){
+    const all = pickedEl.querySelectorAll(".thumb");
+    all.forEach(t => t.classList.remove("active"));
+    thumb.classList.add("active");
+  }
+
+  function enterReviewMode(){
+    reviewMode = true;
+    mainEl.classList.add("review-mode");
+    pickedEl.classList.add("review-mode");
+    statusEl.textContent = "已抽完 ✅ 點右側縮圖可回看（檔名不含副檔名）";
+    state = STATE.STOP;
+
+    const thumbs = pickedEl.querySelectorAll(".thumb");
+    if (thumbs.length > 0) {
+      const last = thumbs[thumbs.length - 1];
+      selectThumb(last);
+      imgEl.src = last.dataset.src;
+      showFilename(stripExtension(last.dataset.name));
+    } else {
+      hideFilename();
+    }
+  }
+
+  function commitRemoveAndAddThumb(){
+    if (lockedSrc == null) return;
+
+    // 右側新增縮圖
+    const thumb = document.createElement("img");
+    thumb.src = lockedSrc;
+    thumb.className = "thumb";
+    thumb.dataset.src = lockedSrc;
+    thumb.dataset.name = lockedSrc; // 用來顯示檔名（再 stripExtension）
+
+    // 抽完後可回看
+    thumb.addEventListener("click", () => {
+      if (!reviewMode) return;
+      selectThumb(thumb);
+      imgEl.src = thumb.dataset.src;
+      showFilename(stripExtension(thumb.dataset.name)); // ✅ 回看也不顯示副檔名
+    });
+
+    pickedEl.appendChild(thumb);
+
+    // 從 pool 移除 lockedSrc
+    const idx = pool.indexOf(lockedSrc);
+    if (idx !== -1) pool.splice(idx, 1);
+
+    updateHud();
+    hideFilename();
+    lockedSrc = null;
+
+    if (pool.length === 0) {
+      enterReviewMode();
+    }
+  }
+
+  // ✅ 空白鍵循環邏輯
+  function onSpace(){
+    if (reviewMode) return;
+    if (pool.length === 0) return;
+
+    if (state === STATE.RUN) {
+      // RUN -> STOP
+      stopOnly();
+    } else if (state === STATE.STOP) {
+      // STOP -> REVEAL
+      revealOnly();
+    } else if (state === STATE.REVEAL) {
+      // REVEAL -> 扣除 + 加縮圖 -> 再 RUN
+      commitRemoveAndAddThumb();
+      start();
+    }
+  }
+
+  // 初始
+updateHud();
+
+preloadImages(pool, () => {
+  showRandom();
+  start();
+});
+
+  document.addEventListener("keydown", (e) => {
+    if (e.code === "Space") {
+      e.preventDefault();
+      onSpace();
+    }
+  });
+
+  // 點一下主畫面也做同樣循環（可選）
+  document.addEventListener("click", () => {
+    onSpace();
+  });
+</script>
+
+</body>
+</html>
